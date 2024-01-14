@@ -1,0 +1,152 @@
+---
+
+#
+# Filename    : ans-files/test-iblox.yml
+# Date        : 20 Mar 2018
+# Author      : Balaji Venkataraman (xbalaji@gmail.com)
+# Description : playbook to test infoblox module
+#
+# Usage:
+#
+# 1. To test, the option "-M" specifies the module path, in this case
+#    the infoblox module is in the current directory so, use "."
+#    Execute the following and observe the output
+#
+#   ansible-playbook -M . test-iblox.yml
+#   ansible-playbook -M . test-iblox.yml -e '{ "env": "lab", ip_only }'
+#   ansible-playbook -M . test-iblox.yml -e '{ "env": "lab", ip_only }'
+#
+#   To decrypt print and exit:
+#   ansible-playbook -M . test-iblox.yml --ask-vault-pass -e '{print_and_exit}'
+# 
+
+- name: test infoblox module
+  hosts: localhost
+  connection: local
+  gather_facts: False
+
+  vars_files:
+    - org_creds_encrypted.yml
+
+  vars:
+    iblox_net1: "10.20.31.32/27"
+    iblox_net2: "10.20.31.64/27"
+    iblox_net3: "10.20.31.96/27"
+    iblox_net4: "10.20.31.128/27"
+    hosts_2add: ["dcos-master-01", "dcos-master-02", "dcos-master-03" ]
+    hosts_2add_with_domain: ["dcos-agent-01.lab.orgname.com",  "dcos-agent-02.lab.orgname.com" ]
+
+  tasks:
+    - name: print all decrypted values
+      debug:
+        msg:
+          - "all variables: {{ org }}"
+      when: print_and_exit is defined
+
+    - name: end play
+      meta: end_play
+      when: print_and_exit is defined
+
+    - name: fail if necessary parameters are not defined
+      fail:
+        msg: "env either is not defined, or env is not 'lab'"
+      when: (env is not defined) or (env  != "lab")
+
+    - name: set infoblox server, user, host
+      set_fact: 
+        iblox_srvr: '{{ org[env]["infoblox"].server }}'
+        iblox_user: '{{ org[env]["infoblox"].user }}'
+        iblox_pass: '{{ org[env]["infoblox"].pass }}'
+
+    - name: print gathered facts
+      debug:
+        msg:
+          - "server:   {{ iblox_srvr }}"
+          - "username: {{ iblox_user }}"
+          - "password: {{ iblox_pass }}"
+          - "network:  {{ iblox_net1 }}"
+
+    - name: get two free ip addresses
+      infoblox:
+        server:   "{{ iblox_srvr }}"
+        username: "{{ iblox_user }}"
+        password: "{{ iblox_pass }}"
+        network:  "{{ item }}"
+        numip: 2
+        state: "getip"  # other valid values: list, query
+      register: infoblox_getip
+      with_items:
+        - "{{ iblox_net1 }}"
+        - "{{ iblox_net2 }}"
+        - "{{ iblox_net3 }}"
+
+    - name: dump the output
+      debug:
+        msg: 
+          - '{{ infoblox_getip }}'
+
+    - name: stop here, if only "ip_only" is requested 
+      fail:
+        msg: "only list/query/getip"
+      when: 
+        - ip_only is defined 
+
+    - name: add three hosts
+      infoblox:
+        server:   "{{ iblox_srvr }}"
+        username: "{{ iblox_user }}"
+        password: "{{ iblox_pass }}"
+        network:  "{{ iblox_net1 }}"
+        hosts: "{{ hosts_2add }}"
+        domain: "lab.orgname.com"
+        state: present # other valid values: installed, latest
+      register: infoblox_addhosts
+
+    - name: dump the output
+      debug:
+        msg: '{{ infoblox_addhosts }}'
+
+    - name: remove the added hosts
+      infoblox:
+        server:   "{{ iblox_srvr }}"
+        username: "{{ iblox_user }}"
+        password: "{{ iblox_pass }}"
+        network:  "{{ iblox_net1 }}"
+        hosts: "{{ hosts_2add }}"
+        domain: "lab.orgname.com"
+        state: absent # other valid values: removed
+      register: infoblox_removedhosts
+
+    - name: dump the output
+      debug:
+        msg: '{{ infoblox_removedhosts }}'
+
+    - name: add two hosts with domain included
+      infoblox:
+        server:   "{{ iblox_srvr }}"
+        username: "{{ iblox_user }}"
+        password: "{{ iblox_pass }}"
+        network:  "{{ iblox_net1 }}"
+        hosts: "{{ hosts_2add_with_domain }}"
+        state: present # other valid values: installed, latest
+      register: infoblox_addhosts_with_domain
+
+    - name: dump the output
+      debug:
+        msg: '{{ infoblox_addhosts_with_domain }}'
+
+    - name: remove the added hosts with domain
+      infoblox:
+        server:   "{{ iblox_srvr }}"
+        username: "{{ iblox_user }}"
+        password: "{{ iblox_pass }}"
+        network:  "{{ iblox_net1 }}"
+        hosts: "{{ hosts_2add_with_domain }}"
+        state: absent # other valid values: removed
+      register: infoblox_removedhosts_with_domain
+
+    - name: dump the output
+      debug:
+        msg: '{{ infoblox_removedhosts_with_domain }}'
+
+  
